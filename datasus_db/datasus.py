@@ -3,16 +3,16 @@ Module with functions used to batch multiple imports from DATASUS's ftp server i
 """
 
 from typing import Callable
-import os.path as path
-import duckdb
-import multiprocessing
+import os
 import polars as pl
-import time
-import random
 import re
 import logging
 from typing import Iterable
 from .ftp import get_matching_files
+from .ftp import fetch_dbc_as_df
+import duckdb
+from dbfread import DBF
+import urllib.request as request
 from .db import (
     create_import_table,
     check_new_files,
@@ -21,133 +21,75 @@ from .db import (
     mark_file_as_imported,
 )
 
-
-MapFn = Callable[[pl.DataFrame], pl.DataFrame]
-FetchFn = Callable[[str], dict[str, pl.DataFrame]]
-
-
 def import_from_ftp(
-    target_tables: list[str],
     ftp_globs: Iterable[str],
-    fetch_fn: FetchFn,
-    db_file="datasus.db",
     ftp_host="ftp.datasus.gov.br",
     ftp_exclude_regex: str = None,
 ):
+
+    files = get_matching_files(ftp_host, ftp_globs)
+    if ftp_exclude_regex:
+        files = remove_matching(files, ftp_exclude_regex)
+    new_filepaths = [f"ftp://{ftp_host}{file}" for file in files]
+    print(new_filepaths)
+    for filepaths in new_filepaths:
+        print(f"⬇️  Downloading file from ftp: '{filepaths}'")
+        fetch_dbc_as_df(filepaths)
+    print("Finished downloading and converting to DBF")
+
+    filepath_dbf = "dbf" # pasta onde estão os dbfs
+    dbf_files = find_dbf_files(filepath_dbf)
+    db_file="datasus.db"
+    table = "dados" # tabela do duckdb onde serão incluido os dados
     with duckdb.connect(db_file) as db_con:
-        target_tables_set = set(target_tables)
-        files = get_matching_files(ftp_host, ftp_globs)
-        if ftp_exclude_regex:
-            files = remove_matching(files, ftp_exclude_regex)
-
         create_import_table(db_con)
-        new_files = check_new_files(files, target_tables, db_con)
-        new_filepaths = [f"ftp://{ftp_host}{file}" for file in new_files]
-
-        # Shuffle files to import in random order to reduce the chance of importing multiple large files at the same time
-        random.shuffle(new_filepaths)
-
-        # Fetch dataframes in parallel
-        processes_count = max(min(multiprocessing.cpu_count(), len(new_filepaths)), 1)
-        total_files = len(new_filepaths)
-        files_imported = 0
-        errors: list[tuple[str, Exception]] = []
-
-        # Batching is done to make sure the garbage collector kicks in
-        for new_filepaths in batch(new_filepaths, 64):
-            with multiprocessing.Pool(processes=processes_count) as pool:
-                waiting = [
-                    (
-                        filepath,
-                        pool.apply_async(
-                            log_fetch,
-                            args=(filepath, fetch_fn, logging.getLogger().level),
-                        ),
-                    )
-                    for filepath in new_filepaths
-                ]
-
-                while len(waiting) != 0:
-                    still_wating = []
-
-                    for filepath, process in waiting:
-                        if process.ready():
-                            try:
-                                # Import fetched data
-                                filename = path.basename(filepath)
-                                tables_data = process.get()
-
-                                msg = f"📂 [{files_imported + 1}/{total_files}] Importing data from file {filename}"
-                                logging.info(msg)
-
-                                for table in tables_data.keys():
-                                    if not table in target_tables_set:
-                                        logging.error(
-                                            f"❌ Table name '{table}' not declared in 'target_tables': {target_tables}"
-                                        )
-                                        continue
-
-                                    if is_file_imported(filename, table, db_con):
-                                        msg = f"🗃️ [{table}] File '{filename}' already imported"
-                                        logging.info(msg)
-                                        continue
-
-                                    df = tables_data[table]
-                                    import_table_data(df, table, filepath, db_con)
-
-                            except Exception as e:
-                                logging.error(f"❌ Error while importing '{filepath}'")
-                                logging.error("Message: ", e)
-                                errors.append((filepath, e))
-
-                            files_imported += 1
-
-                        else:
-                            still_wating.append((filepath, process))
-
-                    waiting = still_wating
-                    time.sleep(0.5)
-
-    if len(errors) == 0:
-        logging.info(f"✅ Data successfully imported to tables: {target_tables}")
-    else:
-        logging.error(
-            f"⚠️  {len(errors)} out of {total_files} imports failed:",
-        )
-        for filepath, e in errors:
-            logging.error(f"    ❌ {path.basename(filepath)}: {e}")
-
-
-def log_fetch(ftp_path: str, fetch_fn: FetchFn, log_level: int):
-    logging.getLogger().setLevel(log_level)
-    logging.info(f"⬇️  Downloading file from ftp: '{ftp_path}'")
-    return fetch_fn(ftp_path)
-
-
-def batch(iterable, n=1):
-    l = len(iterable)
-    for ndx in range(0, l, n):
-        yield iterable[ndx : min(ndx + n, l)]
-
-
-def import_table_data(
-    df: pl.DataFrame,
-    target_table: str,
-    filepath: str,
-    db_con: duckdb.DuckDBPyConnection,
-):
-    filename = path.basename(filepath)
-    logging.info(f"💾 [{target_table}] Saving data to database from: {filename}")
-    row_count = df.select(pl.count())[0, 0]
-
-    if row_count != 0:
-        import_dataframe(target_table, df, db_con)
-    else:
-        logging.warning(f"⚠️ [{target_table}] '{filename}' has no data")
-
-    mark_file_as_imported(filepath, target_table, db_con)
-
+        for dbf_file in dbf_files:
+            if is_file_imported(dbf_file, table, db_con):
+                msg = f"🗃️ [{table}] File '{dbf_file}' already imported"
+                print(msg)
+                continue
+            df = pl.DataFrame(iter(DBF(dbf_file, encoding='iso-8859-1')))
+            import_table_data(df, table, dbf_file, db_con)
 
 def remove_matching(list: list[str], regex: str):
     compiled = re.compile(regex)
     return [e for e in list if not compiled.match(e)]
+
+def find_dbf_files(folder_path):
+    dbf_files = []
+
+    # Check if the specified folder path exists
+    if not os.path.isdir(folder_path):
+        print(f"Error: The specified folder '{folder_path}' does not exist.")
+        return dbf_files
+
+    # Iterate through all files in the specified folder
+    for file_name in os.listdir(folder_path):
+        if file_name.lower().endswith(".dbf"):  # Check if the file has a .dbf extension
+            dbf_files.append(os.path.join(folder_path, file_name))
+
+    return dbf_files
+
+
+def has_table(table_name: str, db_con: duckdb.DuckDBPyConnection) -> bool:
+    return db_con.execute(
+        "SELECT count(*) == 1 as has_table FROM duckdb_tables where table_name = ?",
+        [table_name],
+    ).pl()["has_table"][0]
+
+def import_table_data(
+    df: pl.DataFrame,
+    target_table: str,
+    filepath,
+    db_con: duckdb.DuckDBPyConnection,
+):
+    filename = os.path.basename(filepath)
+    print(f"💾 [{target_table}] Saving data to database from: {filepath}")
+    row_count = df.select(pl.len())[0, 0]
+
+    if row_count != 0:
+        import_dataframe(target_table, df, db_con)
+    else:
+        logging.warning(f"⚠️ [{target_table}] '{filename}' has no data")  
+    mark_file_as_imported(filepath, target_table, db_con)
+
