@@ -21,8 +21,8 @@ def fetch_dbc_as_df(ftp_path: str) -> pl.DataFrame:
     dbc_raw = response.read()
 
     filename = path.basename(ftp_path).split(".")[0]
-    dbc_file = f"dbf/{filename}.dbc"
-    dbf_file = f"dbf/{filename}.dbf"
+    dbc_file = f".tmp/{filename}.dbc"
+    dbf_file = f".tmp/{filename}.dbf"
 
     os.makedirs(path.dirname(dbc_file), exist_ok=True)
     with open(
