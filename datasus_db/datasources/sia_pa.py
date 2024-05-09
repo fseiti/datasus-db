@@ -8,7 +8,7 @@ from ..ftp import fetch_dbc_as_df
 MAIN_TABLE = "SIA_PA"
 
 
-def import_sia_pa(years=["*"], states=["*"], months=["*"]):
+def import_sia_pa(db_file="datasus.db", years=["*"], states=["*"], months=["*"]):
     """Import PA (Produção Ambulatorial) from SIASUS (Sistema de Informações Ambulatorial do SUS).
 
     Args:
@@ -25,6 +25,7 @@ def import_sia_pa(years=["*"], states=["*"], months=["*"]):
     """
     logging.info(f"⏳ [{MAIN_TABLE}] Starting import...")
     import_from_ftp(
+        [MAIN_TABLE],
         [
             f"/dissemin/publicos/SIASUS/200801_/Dados/PA{state.upper()}{format_year(year)}{format_month(month)}*.dbc"
             for year in years
@@ -37,7 +38,7 @@ def import_sia_pa(years=["*"], states=["*"], months=["*"]):
 
 
 def fetch_sia_rh(ftp_path: str):
-    df = fetch_dbc_as_df(ftp_path)
+    fetch_dbc_as_df(ftp_path)
     return {MAIN_TABLE: map_sia_pa(df)}
 
 
@@ -112,6 +113,5 @@ def map_sia_pa(df: pl.DataFrame):
             Column("PA_SRV_C", pl.Utf8),
             Column("PA_INE", pl.Utf8),
             Column("PA_NAT_JUR", pl.Utf8),
-
         ],
     )

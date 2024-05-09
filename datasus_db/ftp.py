@@ -21,8 +21,8 @@ def fetch_dbc_as_df(ftp_path: str) -> pl.DataFrame:
     dbc_raw = response.read()
 
     filename = path.basename(ftp_path).split(".")[0]
-    dbc_file = f"dbf/{filename}.dbc"
-    dbf_file = f"dbf/{filename}.dbf"
+    dbc_file = f"dbf1/{filename}.dbc"
+    dbf_file = f"dbf1/{filename}.dbf"
 
     os.makedirs(path.dirname(dbc_file), exist_ok=True)
     with open(
@@ -30,12 +30,11 @@ def fetch_dbc_as_df(ftp_path: str) -> pl.DataFrame:
         "wb",
     ) as f:
         f.write(dbc_raw)
-    print(f"convertendo'{filename}'")
     datasus_dbc.decompress(dbc_file, dbf_file)
 
-    #df = pl.DataFrame(iter(DBF(dbf_file, encoding="iso-8859-1")))
-    #return df
-    #rm(dbc_file)
+    df = pl.DataFrame(iter(DBF(dbf_file, encoding="iso-8859-1")))
+    return df
+    #rm(dbc_file) não remover os arquivos 
     #rm(dbf_file)
 
 

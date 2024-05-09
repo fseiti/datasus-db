@@ -5,7 +5,7 @@ import sys
 logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
 
 def main():
-    datasus_db.import_sia_pa(years=[2023], months=[2,4])
+    datasus_db.import_sia_pa(years=[2023],states=["RR"], months=[4])
 
 
 

@@ -21,8 +21,14 @@ from .db import (
     mark_file_as_imported,
 )
 
+MapFn = Callable[[pl.DataFrame], pl.DataFrame]
+FetchFn = Callable[[str], dict[str, pl.DataFrame]]
+
 def import_from_ftp(
+    target_tables: list[str],
     ftp_globs: Iterable[str],
+    fetch_fn: FetchFn,
+    db_file="datasus.db",
     ftp_host="ftp.datasus.gov.br",
     ftp_exclude_regex: str = None,
 ):
@@ -40,7 +46,9 @@ def import_from_ftp(
     filepath_dbf = "dbf" # pasta onde estão os dbfs
     dbf_files = find_dbf_files(filepath_dbf)
     db_file="datasus.db"
-    table = "dados" # tabela do duckdb onde serão incluido os dados
+    filename = os.path.basename(dbf_files[0]).split(".")[0]
+    print(filename[0:2])
+    table = filename[0:2] # tabela do duckdb onde serão incluido os dados
     with duckdb.connect(db_file) as db_con:
         create_import_table(db_con)
         for dbf_file in dbf_files:
