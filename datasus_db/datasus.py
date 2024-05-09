@@ -33,7 +33,7 @@ def import_from_ftp(
     ftp_exclude_regex: str = None,
 ):
 
-    """files = get_matching_files(ftp_host, ftp_globs)
+    files = get_matching_files(ftp_host, ftp_globs)
     if ftp_exclude_regex:
         files = remove_matching(files, ftp_exclude_regex)
     new_filepaths = [f"ftp://{ftp_host}{file}" for file in files]
@@ -41,7 +41,7 @@ def import_from_ftp(
     for filepaths in new_filepaths:
         print(f"⬇️  Downloading file from ftp: '{filepaths}'")
         fetch_dbc_as_df(filepaths)
-    print("Finished downloading and converting to DBF")"""
+    print("Finished downloading and converting to DBF")
 
     filepath_dbf = ".tmp" # pasta onde estão os dbfs
     dbf_files = find_dbf_files(filepath_dbf)
