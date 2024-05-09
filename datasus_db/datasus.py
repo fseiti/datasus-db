@@ -45,7 +45,6 @@ def import_from_ftp(
 
     filepath_dbf = "dbf" # pasta onde estão os dbfs
     dbf_files = find_dbf_files(filepath_dbf)
-    db_file="datasus.db"
     filename = os.path.basename(dbf_files[0]).split(".")[0]
     print(filename[0:2])
     table = filename[0:2] # tabela do duckdb onde serão incluido os dados

@@ -32,7 +32,7 @@ def import_sia_pa(db_file="datasus.db", years=["*"], states=["*"], months=["*"])
             for state in states
             for month in months
         ],
-        fetch_sia_rh,
+        fetch_sia_rh, 
         db_file=db_file,
     )
 
